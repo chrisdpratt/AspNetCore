@@ -159,7 +159,7 @@ namespace Microsoft.AspNetCore.Builder
             }
         }
 
-        private static bool IsNotFrameworkDir(HttpContext context)
+        internal static bool IsNotFrameworkDir(HttpContext context)
             => !context.Request.Path.StartsWithSegments("/_framework");
 
         private static IContentTypeProvider CreateContentTypeProvider(bool enableDebugging)
