@@ -84,6 +84,12 @@ namespace Microsoft.AspNetCore.Identity.UI.V3.Pages.Account.Manage.Internal
         ///     directly from your code. This API may change or be removed in future releases.
         /// </summary>
         public virtual Task<IActionResult> OnPostSendVerificationEmailAsync() => throw new NotImplementedException();
+
+        /// <summary>
+        ///     This API supports the ASP.NET Core Identity default UI infrastructure and is not intended to be used
+        ///     directly from your code. This API may change or be removed in future releases.
+        /// </summary>
+        public virtual Task<IActionResult> OnGetConfirmEmailChangeAsync(string email, string code) => throw new NotImplementedException();
     }
 
     internal class IndexModel<TUser> : IndexModel where TUser : class
@@ -140,7 +146,7 @@ namespace Microsoft.AspNetCore.Identity.UI.V3.Pages.Account.Manage.Internal
             }
 
             var email = await _userManager.GetEmailAsync(user);
-            if (Input.Email != email)
+            if (string.IsNullOrEmpty(email))
             {
                 var setEmailResult = await _userManager.SetEmailAsync(user, Input.Email);
                 if (!setEmailResult.Succeeded)
@@ -157,6 +163,22 @@ namespace Microsoft.AspNetCore.Identity.UI.V3.Pages.Account.Manage.Internal
                     var userId = await _userManager.GetUserIdAsync(user);
                     throw new InvalidOperationException($"Unexpected error occurred setting name for user with ID '{userId}'.");
                 }
+            }
+            else if (Input.Email != email)
+            {
+                var code = await _userManager.GenerateChangeEmailTokenAsync(user, Input.Email);
+                var callbackUrl = Url.Page(
+                    "/Account/Manage/Index",
+                    pageHandler: "ConfirmChangeEmail",
+                    values: new { email = Input.Email, code = code },
+                    protocol: Request.Scheme);
+                await _emailSender.SendEmailAsync(
+                    email,
+                    "Confirm your email change",
+                    $"Please confirm your email change by <a href='{HtmlEncoder.Default.Encode(callbackUrl)}'>clicking here</a>.");
+
+                StatusMessage = "Verification email sent. Please check your email.";
+                return RedirectToPage();
             }
 
             var phoneNumber = await _userManager.GetPhoneNumberAsync(user);
@@ -203,6 +225,35 @@ namespace Microsoft.AspNetCore.Identity.UI.V3.Pages.Account.Manage.Internal
                 $"Please confirm your account by <a href='{HtmlEncoder.Default.Encode(callbackUrl)}'>clicking here</a>.");
 
             StatusMessage = "Verification email sent. Please check your email.";
+            return RedirectToPage();
+        }
+
+        public override async Task<IActionResult> OnGetConfirmEmailChangeAsync(string email, string code)
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return NotFound($"Unable to load user with ID '{_userManager.GetUserId(User)}'.");
+            }
+
+            var changeEmailResult = await _userManager.ChangeEmailAsync(user, Input.Email, code);
+            if (!changeEmailResult.Succeeded)
+            {
+                var userId = await _userManager.GetUserIdAsync(user);
+                throw new InvalidOperationException($"Unexpected error occurred setting email for user with ID '{userId}'.");
+            }
+
+            // In our UI email and user name are one and the same, so when we update the email
+            // we need to update the user name.
+            var setUserNameResult = await _userManager.SetUserNameAsync(user, Input.Email);
+            if (!setUserNameResult.Succeeded)
+            {
+                var userId = await _userManager.GetUserIdAsync(user);
+                throw new InvalidOperationException($"Unexpected error occurred setting name for user with ID '{userId}'.");
+            }
+
+            await _signInManager.RefreshSignInAsync(user);
+            StatusMessage = "Your profile has been updated";
             return RedirectToPage();
         }
     }
